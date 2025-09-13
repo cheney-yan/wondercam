@@ -388,19 +388,6 @@ export default function WonderCamPage() {
 
     console.log('Sending message:', message);
 
-    // Prevent sending if user has zero credits (hard block)
-    if (appState.credits <= 0) {
-      console.log('❌ Cannot send message: no credits remaining');
-      if (appState.isAnonymous) {
-        upgradePrompt.showCreditsExhausted();
-      }
-      setAppState(prev => ({
-        ...prev,
-        error: t.insufficientCredits
-      }));
-      return;
-    }
-
     // Determine if we have a cropped viewport version of the current photo (set by ChatComponent on send)
     let effectivePhoto: CapturedPhoto | null = appState.currentPhoto;
     try {
@@ -543,30 +530,6 @@ export default function WonderCamPage() {
           hasImageData = true;
           imageData = chunk.data;
           console.log('🖼️ Received AI-generated image chunk:', imageData?.substring(0, 50) + '...');
-
-          try {
-            const canPay = await creditService.checkCanPerformAction(CreditAction.IMAGE_GENERATION);
-            if (!canPay) {
-              console.warn('❌ Insufficient credits for generated image.');
-              if (appState.isAnonymous) {
-                upgradePrompt.showCreditsExhausted();
-              }
-            } else {
-              console.log('💳 Consuming 2 credits for generated image...');
-              const success = await creditService.consumeCredits(2, CreditAction.IMAGE_GENERATION);
-              if (success) {
-                const currentCredits = await creditService.getCurrentCredits();
-                setAppState(prev => ({ ...prev, credits: currentCredits }));
-                if (currentCredits <= 2 && appState.isAnonymous) {
-                  upgradePrompt.showLowCredits(currentCredits);
-                }
-              } else {
-                console.error('❌ Failed to consume credits for generated image');
-              }
-            }
-          } catch (err) {
-            console.error('❌ Error during image credit deduction:', err);
-          }
         }
       }
 
