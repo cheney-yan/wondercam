@@ -25,6 +25,7 @@ const translations = {
     share: "Share",
     store: "Save",
     thinking: "AI is thinking...",
+    waiting: "waiting...",
     photoTaken: "Photo captured!",
     startConversation: "Start a conversation about your photo",
     camera: "Camera",
@@ -44,6 +45,7 @@ const translations = {
     share: "分享",
     store: "保存",
     thinking: "AI正在思考...",
+    waiting: "等待中...",
     photoTaken: "照片已拍摄！",
     startConversation: "开始关于您照片的对话",
     camera: "相机",
@@ -63,6 +65,7 @@ const translations = {
     share: "Compartir",
     store: "Guardar",
     thinking: "La IA está pensando...",
+    waiting: "esperando...",
     photoTaken: "¡Foto capturada!",
     startConversation: "Inicia una conversación sobre tu foto",
     camera: "Cámara",
@@ -82,6 +85,7 @@ const translations = {
     share: "Partager",
     store: "Sauvegarder",
     thinking: "L'IA réfléchit...",
+    waiting: "en attente...",
     photoTaken: "Photo capturée !",
     startConversation: "Commencez une conversation sur votre photo",
     camera: "Caméra",
@@ -101,6 +105,7 @@ const translations = {
     share: "共有",
     store: "保存",
     thinking: "AIが考えています...",
+    waiting: "待機中...",
     photoTaken: "写真を撮影しました！",
     startConversation: "あなたの写真について会話を始めましょう",
     camera: "カメラ",
@@ -578,6 +583,25 @@ export function ChatComponent({
             </button>
           </div>
         </div>
+
+        {/* Enhanced Loading Overlay - breathing "waiting..." text */}
+        {(isLoading || session.messages.some(m => m.isStreaming)) && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+            <div className="flex items-center gap-0.5">
+              {t.waiting.split('').map((char, index) => (
+                <span
+                  key={index}
+                  className="text-white/90 text-sm font-medium waiting-char"
+                  style={{
+                    animationDelay: `${index * 180}ms`,
+                  }}
+                >
+                  {char}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Middle Carousel Area */}
@@ -736,7 +760,7 @@ export function ChatComponent({
           </>
         )}
 
-        {/* Local bounce animation styles */}
+        {/* Local bounce and waiting animation styles */}
         <style jsx>{`
           @keyframes wc-bounce-left {
             0% { transform: translateX(0); }
@@ -750,11 +774,41 @@ export function ChatComponent({
             60% { transform: translateX(6px); }
             100% { transform: translateX(0); }
           }
+          @keyframes wc-waiting-breathe {
+            0% {
+              opacity: 0.4;
+              transform: scale(0.95);
+            }
+            50% {
+              opacity: 1;
+              transform: scale(1.05);
+            }
+            100% {
+              opacity: 0.4;
+              transform: scale(0.95);
+            }
+          }
+          @keyframes wc-waiting-wave {
+            0%, 60%, 100% {
+              opacity: 0.4;
+              transform: translateY(0) scale(0.95);
+            }
+            30% {
+              opacity: 1;
+              transform: translateY(-2px) scale(1.05);
+            }
+          }
           .edge-bounce-left {
             animation: wc-bounce-left 0.35s ease;
           }
           .edge-bounce-right {
             animation: wc-bounce-right 0.35s ease;
+          }
+          .waiting-char {
+            animation: wc-waiting-wave 2.5s ease-in-out infinite;
+          }
+          .waiting-dots {
+            animation: wc-waiting-breathe 1.5s ease-in-out infinite;
           }
         `}</style>
 
