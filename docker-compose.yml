@@ -1,0 +1,60 @@
+version: '3.8'
+services:
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    ports:
+      - "3011:3000"
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY=${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY}
+      - NEXT_PUBLIC_BACKEND_API_HOST=${NEXT_PUBLIC_BACKEND_API_HOST}
+    restart: unless-stopped
+    env_file: .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "3"
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "18000:8000"
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=${DEBUG:-False}
+    volumes:
+      # Mount your service account key file
+      - ./api/credentials.json:/app/credentials.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    env_file: .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "3"
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared-tunnel-wondercam
+    restart: always
+    command: tunnel run
+    env_file:
+      - .env
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "3"

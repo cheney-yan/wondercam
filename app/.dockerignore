@@ -1,0 +1,6 @@
+# See https://docs.docker.com/engine/reference/builder/#dockerignore-file
+**/node_modules
+**/.next
+*~
+# Used by Vercel
+.vercel

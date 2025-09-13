@@ -1,0 +1,70 @@
+version: '3.8'
+services:
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3011:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY=${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY}
+      - NEXT_PUBLIC_BACKEND_API_HOST=${NEXT_PUBLIC_BACKEND_API_HOST}
+    volumes:
+      # Mount source code for hot reload (excluding node_modules and .next)
+      - ./app:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+    env_file: .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "3"
+    command: ["npm", "run", "dev"]
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    ports:
+      - "18000:8000"
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=True
+      - PYTHONPATH=/app
+    volumes:
+      # Mount source code for hot reload (excluding __pycache__)
+      - ./api:/app
+      - ./api/credentials.json:/app/credentials.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    env_file: .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "3"
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # Optional: Add a file watcher service for additional monitoring
+  # file-watcher:
+  #   image: alpine:latest
+  #   volumes:
+  #     - ./app:/watch/app
+  #     - ./api:/watch/api
+  #   command: ["sh", "-c", "while true; do sleep 30; echo 'Watching for changes...'; done"]
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "1m"
+  #       max-file: "3"

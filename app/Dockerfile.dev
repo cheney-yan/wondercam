@@ -1,0 +1,20 @@
+# Development Dockerfile for Next.js App with Hot Reload
+
+FROM node:20-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies for development
+COPY package.json package-lock.json* ./
+RUN npm install
+
+# Set environment to development
+ENV NODE_ENV=development
+
+# Expose port
+EXPOSE 3000
+
+# Start development server with hot reload
+# Command will be overridden by docker-compose
+CMD ["npm", "run", "dev"]
