@@ -13,8 +13,6 @@ import { UpgradePrompt, useUpgradePrompt } from '@/components/upgrade-prompt';
 import { getTranslations } from '@/lib/i18n';
 import { UserMenu } from '@/components/user-menu';
 import { unifiedAIService } from '@/lib/ai-service-unified';
-import { APIStatusIndicator } from '@/components/api-status-indicator';
-import { RoutingDebug } from '@/components/routing-debug';
 
 export type AppMode = 'camera' | 'chat' | 'photo-actions' | 'zoomed';
 export type SupportedLanguage = 'en' | 'zh' | 'es' | 'fr' | 'ja';
@@ -686,12 +684,6 @@ export default function WonderCamPage() {
   return (
     <div className="wondercam-app h-screen bg-black text-white overflow-hidden relative" style={{touchAction: 'manipulation'}}>
       
-      {/* API Status Indicator */}
-      <APIStatusIndicator />
-
-      {/* Routing Debug (for troubleshooting) */}
-      <RoutingDebug />
-
       {/* Error Display */}
       {appState.error && (
         <div className="absolute top-16 right-4 z-40 bg-red-600 text-white p-3 rounded-lg">

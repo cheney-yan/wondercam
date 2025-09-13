@@ -293,36 +293,3 @@ async def v2_debug_info():
             "error": str(e),
             "logging_enabled": True
         }
-
-@v2_router.post("/chat/test-interception")
-async def test_stream_interception(
-    user: dict = Depends(verify_token)
-):
-    """Test endpoint for stream interception capabilities"""
-    
-    user_id = getattr(user, 'id', 'unknown') if user else 'unknown'
-    logger.info(f"🧪 Testing stream interception for user {user_id}")
-    
-    # Create a test request with interception enabled
-    from v2_models import V2ContentPart
-    test_request = V2ChatRequest(
-        contents=[
-            V2ContentPart(text="I need help with understanding passwords and security vulnerabilities. Can you explain the best practices?")
-        ],
-        language="en",
-        preprocessing={
-            "filter_content": True,
-            "modify_responses": True,
-            "inject_system": True
-        }
-    )
-    
-    return StreamingResponse(
-        stream_v2_response(test_request, user),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Interception-Test": "enabled"
-        }
-    )
