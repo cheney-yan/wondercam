@@ -75,9 +75,10 @@ class EndpointTranslator:
             logger.info(f"Using specific location '{location}' for model '{model_name}'")
             return location
         
-        # For all other models, use australia-southeast1 (Sydney) instead of global
-        location = "australia-southeast1"
-        logger.info(f"Using default Sydney location '{location}' for model '{model_name}'")
+        # For all other models, use configured location (default: global)
+        from config import settings
+        location = settings.vertex_ai_location
+        logger.info(f"Using configured default location '{location}' for model '{model_name}' (from env: VERTEX_AI_LOCATION)")
         return location
     
     def _map_model_name(self, gemini_model_name: str) -> str:

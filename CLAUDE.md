@@ -17,10 +17,10 @@ The project consists of three main components:
 
 ### Frontend Development (app/)
 ```bash
-# Development with hot reload
+# Development with hot reload (uses Turbopack)
 npm run dev
 
-# Production build
+# Production build (skips lint during build)
 npm run build
 
 # Start production server
@@ -40,6 +40,12 @@ python run.py
 
 # Setup environment
 ./setup.sh
+
+# Using Makefile commands
+make dev          # Development mode
+make run          # Production mode
+make test         # Health check
+make setup        # Environment setup
 ```
 
 ### Docker Operations
@@ -69,7 +75,14 @@ docker-compose -f docker-compose.dev.yml down
 - **Camera Component**: `/components/wondercam/camera.tsx` - WebRTC camera functionality with multi-camera support
 - **Chat Component**: `/components/wondercam/chat.tsx` - Real-time streaming AI chat interface
 - **Photo Viewer**: `/components/wondercam/photo-viewer.tsx` - Photo display and zoom functionality
-- **AI Service**: `/lib/ai-service.ts` - Streaming AI responses with JWT authentication
+- **AI Service V1**: `/lib/ai-service.ts` - V1Beta Gemini-compatible streaming AI service
+- **AI Service V2**: `/lib/ai-service-v2.ts` - Simplified V2 API with extensible message types
+
+### Backend Structure  
+- **V1Beta API**: `main.py` - Gemini-compatible proxy to Vertex AI (existing)
+- **V2 API**: `v2_api.py` - Extensible messaging API with preprocessing support
+- **V2 Models**: `v2_models.py` - Pydantic data structures for V2 API
+- **V2 Translator**: `v2_translator.py` - Converts V2 ↔ Vertex AI formats with custom logic
 
 ### Core Data Types
 ```typescript
@@ -96,29 +109,39 @@ type SupportedLanguage = 'en' | 'zh' | 'es' | 'fr' | 'ja';
 ```
 
 ### Authentication Flow
-- Uses Supabase Auth with JWT tokens
-- Frontend handles session management via `/lib/supabase/client.ts`
-- API proxy expects `x-goog-api-key` header with JWT token (currently using hardcoded key for development)
-- Protected routes enforced by `/middleware.ts`
+- **Anonymous Users**: Automatic anonymous authentication with IP-based credit tracking
+- **Registered Users**: Email/password registration via Supabase Auth with JWT tokens
+- **Session Management**: Frontend handles session via `/lib/supabase/client.ts` with automatic refresh
+- **Credit System**: Anonymous users get limited credits; registered users get extended limits
+- **Protected Routes**: Enforced by `/middleware.ts` with upgrade prompts for anonymous users
 
 ### AI Integration
+- **Dual API Support**: V1Beta (Gemini-compatible) and V2 (extensible messaging) APIs
+- **V1Beta Features**: Existing Gemini-compatible streaming with `x-goog-api-key` authentication
+- **V2 Features**: Extensible message types (text/image/voice), preprocessing support, `Authorization: Bearer` auth
 - **Dual Image Processing**: Original quality for display, compressed (1024px, 70% quality) for AI
-- **Streaming Responses**: Real-time AI response streaming with typewriter effect
-- **Multi-language Support**: AI responses adapt to selected language
-- **Context Preservation**: Chat history maintained across conversation turns
-- **Image Generation Support**: Handles both text and AI-generated image responses
+- **Streaming Responses**: Real-time AI response streaming with typewriter effect using async generators
+- **Multi-language Support**: AI responses adapt to selected language (en, zh, es, fr, ja)
+- **Context Preservation**: Chat history maintained across conversation turns with photo context
+- **Image Generation**: Direct chat without photos generates AI images (costs 2 credits)
+- **Photo Analysis**: First message with photo analyzes content (costs 1 credit)
+- **Preprocessing**: V2 API can interact with client before calling Vertex AI for custom logic
 
 ## Common Development Patterns
 
 ### Error Handling
-- Camera errors are handled with user-friendly messages based on error types (NotAllowedError, NotFoundError, etc.)
-- AI service errors include content policy, rate limiting, and authentication failure handling
-- All errors display in-app notifications with dismiss functionality
+- **Camera Errors**: User-friendly messages based on error types (NotAllowedError, NotFoundError, etc.)
+- **AI Service Errors**: Content policy, rate limiting, authentication failure handling with fallbacks
+- **Credit System Errors**: Graceful degradation with upgrade prompts for anonymous users
+- **Network Errors**: Retry mechanisms and offline indicators
+- **Error Display**: In-app notifications with dismiss functionality and contextual error messages
 
 ### State Management
-- Uses React hooks and context for session-based state (no persistence)
-- Main app state managed in `/app/wondercam/page.tsx` with `AppState` interface
-- Camera and chat components receive props and communicate via callback functions
+- **Session-Based**: React hooks and context for session-based state (no server persistence)
+- **App State**: Centralized state in `/app/wondercam/page.tsx` with `AppState` interface
+- **Component Communication**: Props and callback functions between camera, chat, and photo viewer components
+- **Credit Tracking**: Real-time credit updates with local storage synchronization
+- **Anonymous/Registered State**: Dynamic UI based on authentication status
 
 ### Image Processing Pipeline
 ```typescript
@@ -141,10 +164,12 @@ const aiProcessing = tempCanvas.toDataURL('image/jpeg', 0.7); // Compressed for 
 - Implement proper cleanup for media streams and event listeners
 
 ### Performance Considerations
-- Image compression pipeline optimized for mobile devices
-- Streaming AI responses with natural pausing for readability
-- Memory-efficient canvas operations with proper cleanup
-- Disabled browser zoom to prevent UI interference
+- **Image Processing**: Dual compression pipeline optimized for mobile devices with Canvas API
+- **Memory Management**: Proper cleanup of media streams, canvas operations, and event listeners
+- **Streaming Optimization**: AI responses with natural pausing and typewriter effects
+- **Browser Zoom**: Disabled zoom shortcuts and gestures to prevent UI interference
+- **Mobile Optimization**: Touch-friendly interface with gesture handling for photo viewer
+- **Resource Cleanup**: Component unmount handlers for streams and event listeners
 
 ### Security Notes
 - JWT tokens handled securely with automatic refresh
@@ -165,28 +190,48 @@ const aiProcessing = tempCanvas.toDataURL('image/jpeg', 0.7); // Compressed for 
 # Frontend (.env.local)
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# AI API Configuration  
 NEXT_PUBLIC_BACKEND_API_HOST=your_backend_host
+
+# V2 API Settings
+NEXT_PUBLIC_USE_V2_API=true
+NEXT_PUBLIC_V2_API_FALLBACK=true
+NEXT_PUBLIC_API_VERSION=v2
 
 # API (.env)
 GOOGLE_APPLICATION_CREDENTIALS=path_to_credentials.json
 DEBUG=False
 HOST=0.0.0.0
 PORT=8000
+PROXY_API_KEY=your_proxy_api_key
+
+# Docker Environment
+# Copy from .env.example and configure all values
 ```
+
+### Credit System Architecture
+- **Anonymous Users**: IP-based credit tracking with daily reset
+- **Credit Actions**: Photo analysis (1 credit), image generation (2 credits)  
+- **Database Functions**: Automated credit management via Supabase RPC functions
+- **Upgrade Prompts**: Contextual prompts when credits are low/exhausted
+- **Session Management**: Credits synchronized across browser tabs
 
 ## Known Implementation Status
 
 ### Implemented Features
-- Camera capture with multi-device support
-- Photo compression pipeline (dual quality)
-- Streaming AI chat with conversation history
-- Multi-language UI and AI responses
-- Photo zoom/pan functionality
-- Supabase authentication integration
-- Docker containerization
+- **Dual AI APIs**: V2 extensible messaging API with V1Beta Gemini-compatible fallback
+- **Authentication**: Anonymous users with credit system + Supabase registration
+- **Camera**: Multi-device support with device switching and file upload fallback
+- **Image Processing**: Dual compression pipeline with viewport cropping support
+- **AI Integration**: Streaming chat with photo analysis and image generation (both APIs)
+- **Multi-language**: Full UI and AI response support (5 languages)
+- **Photo Viewer**: Zoom/pan functionality with share and download actions
+- **Credit System**: IP-based anonymous credits with upgrade prompts
+- **Responsive Design**: Mobile-first with touch gestures and proper viewport handling
+- **API Monitoring**: Real-time API health status and version indicator
 
 ### Planned Features (from requirements.md)
-- Anonymous user credit system
 - Gallery interface replacing chat history
 - Voice input with Web Speech API
 - Pre-set message templates
@@ -200,9 +245,36 @@ PORT=8000
 - AI response time: < 30 seconds
 - Photo capture response: < 500ms
 
+## Development Guidelines
+
+### Component Architecture
+- All camera/chat components are client-side (`'use client'`)
+- TypeScript interfaces for all props and state (see core data types above)
+- Proper cleanup for media streams, event listeners, and canvas operations
+- Loading states and error boundaries with user feedback
+- **Unified AI Service**: Automatic V2/V1Beta selection based on environment configuration
+- **API Status Indicator**: Real-time monitoring and health display for both API versions
+
+### Testing Approach
+- Camera functionality requires physical devices with cameras
+- AI service includes mock response capability (`useMockResponse` flag in ai-service.ts)
+- **V2 API Testing**: Use API status indicator to verify V2 usage and health
+- **Fallback Testing**: Test V2 → V1Beta fallback scenarios by breaking V2 endpoints
+- Cross-browser testing needed for WebRTC compatibility
+- Mobile-first responsive design testing required
+- Test with anonymous and registered user scenarios
+- **Environment Testing**: Test different API configurations (V1-only, V2-only, V2-with-fallback)
+
+### Security and Privacy
+- No persistent photo storage (session-based only)
+- Secure JWT token handling with automatic refresh
+- Content Security Policy configured for external API access
+- Camera permissions handled with clear user messaging
+
 ## Browser Support
-- Chrome 80+ (primary)
+- Chrome 80+ (primary target)
 - Safari 13+ (iOS/macOS)
 - Firefox 75+
 - Edge 80+
 - Requires WebRTC support for camera functionality
+- Mobile browsers with touch gesture support

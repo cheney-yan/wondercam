@@ -12,6 +12,9 @@ from supabase_auth import verify_token
 from auth_handler import AuthenticationHandler
 from endpoint_translator import EndpointTranslator
 
+# Import V2 API
+from v2_api import v2_router
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO if settings.debug else logging.WARNING,
@@ -34,6 +37,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include V2 API routes
+app.include_router(v2_router)
 
 
 # Initialize global components
@@ -68,12 +74,28 @@ async def health_check():
 async def root():
     """Root endpoint with service information"""
     return {
-        "service": "Gemini-compatible API using Vertex AI",
-        "version": "1.0.0", 
-        "description": "Exposes Gemini-compatible interface while using Vertex AI internally",
+        "service": "WonderCam AI API Service",
+        "version": "2.0.0", 
+        "description": "Unified AI API supporting v1beta (Gemini-compatible) and v2 (extensible messaging)",
         "endpoints": {
             "health": "/health",
-            "gemini_api": "/v1beta/models/{model}:{action}"
+            "v1beta_gemini": "/v1beta/models/{model}:{action}",
+            "v2_chat": "/v2/chat",
+            "v2_health": "/v2/health", 
+            "v2_capabilities": "/v2/capabilities"
+        },
+        "versions": {
+            "v1beta": {
+                "description": "Gemini-compatible API using Vertex AI internally",
+                "authentication": "x-goog-api-key header (JWT token)",
+                "features": ["streaming", "image_analysis", "image_generation"]
+            },
+            "v2": {
+                "description": "Extensible messaging API with preprocessing support",
+                "authentication": "Authorization: Bearer {token}",
+                "message_types": ["text", "image", "voice"],
+                "features": ["streaming", "preprocessing", "multi_modal", "extensible"]
+            }
         }
     }
 

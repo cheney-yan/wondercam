@@ -11,10 +11,17 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
+    // Normalize backend host URL (remove trailing slash)
+    const backendHost = (process.env.NEXT_PUBLIC_BACKEND_API_HOST || '').replace(/\/$/, '');
+    
     return [
       {
         source: '/v1beta/:path*',
-        destination: `${process.env.NEXT_PUBLIC_BACKEND_API_HOST}/v1beta/:path*`,
+        destination: `${backendHost}/v1beta/:path*`,
+      },
+      {
+        source: '/v2/:path*',
+        destination: `${backendHost}/v2/:path*`,
       },
     ]
   },

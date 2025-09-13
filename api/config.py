@@ -6,6 +6,7 @@ import os
 class Settings(BaseSettings):
     # Google Cloud Configuration
     google_application_credentials: Optional[str] = None
+    vertex_ai_location: str = "global"  # Default to global region
     
     # Supabase Configuration
     supabase_url: str

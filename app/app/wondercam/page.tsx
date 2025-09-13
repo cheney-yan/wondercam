@@ -12,6 +12,9 @@ import { creditService, CreditAction } from '@/lib/services/credit-service';
 import { UpgradePrompt, useUpgradePrompt } from '@/components/upgrade-prompt';
 import { getTranslations } from '@/lib/i18n';
 import { UserMenu } from '@/components/user-menu';
+import { unifiedAIService } from '@/lib/ai-service-unified';
+import { APIStatusIndicator } from '@/components/api-status-indicator';
+import { RoutingDebug } from '@/components/routing-debug';
 
 export type AppMode = 'camera' | 'chat' | 'photo-actions' | 'zoomed';
 export type SupportedLanguage = 'en' | 'zh' | 'es' | 'fr' | 'ja';
@@ -79,6 +82,27 @@ export default function WonderCamPage() {
   const supabase = createClient();
   const upgradePrompt = useUpgradePrompt();
   const t = getTranslations(appState.language);
+
+  // Initialize API service and log configuration
+  useEffect(() => {
+    const initializeAPI = async () => {
+      try {
+        console.log('🔧 Initializing AI Service...');
+        const capabilities = await unifiedAIService.getCapabilities();
+        const health = await unifiedAIService.healthCheck();
+        
+        console.log('✅ AI Service initialized:', {
+          version: unifiedAIService.getCurrentAPIVersion(),
+          capabilities: capabilities?.features || [],
+          health
+        });
+      } catch (error) {
+        console.warn('⚠️ AI Service initialization failed:', error);
+      }
+    };
+
+    initializeAPI();
+  }, []);
 
   useEffect(() => {
     // Initialize anonymous authentication and credits
@@ -303,6 +327,9 @@ export default function WonderCamPage() {
   };
 
   const handleNewPhoto = () => {
+    // Clear conversation history when starting new photo session
+    unifiedAIService.clearConversationHistory();
+    
     setAppState(prev => ({
       ...prev,
       currentMode: 'camera',
@@ -443,8 +470,7 @@ export default function WonderCamPage() {
         usingCropped: effectivePhoto && effectivePhoto.id !== appState.currentPhoto?.id
       });
 
-      const { aiService } = await import('@/lib/ai-service');
-      console.log('✅ AI service imported successfully');
+      console.log(`✅ Using unified AI service (${unifiedAIService.getCurrentAPIVersion()})`);
       
       const streamingMessageId = crypto.randomUUID();
       let accumulatedContent = '';
@@ -471,21 +497,21 @@ export default function WonderCamPage() {
         if (isFirstMessage) {
           if (hasInitialPhoto && effectivePhoto) {
             console.log('🖼️ First message with (possibly cropped) photo -> analyzePhoto');
-            responseStream = aiService.analyzePhoto(
+            responseStream = unifiedAIService.analyzePhoto(
               effectivePhoto,
               message,
               appState.language
             );
           } else {
             console.log('🆕 First direct-chat message without photo -> generateImageFromPrompt');
-            responseStream = aiService.generateImageFromPrompt(
+            responseStream = unifiedAIService.generateImageFromPrompt(
               message,
               appState.language
             );
           }
         } else {
           console.log('💬 Continuing conversation');
-          responseStream = aiService.continueConversation(
+          responseStream = unifiedAIService.continueConversation(
             appState.activeSession.messages,
             message,
             appState.language,
@@ -659,6 +685,12 @@ export default function WonderCamPage() {
 
   return (
     <div className="wondercam-app h-screen bg-black text-white overflow-hidden relative" style={{touchAction: 'manipulation'}}>
+      
+      {/* API Status Indicator */}
+      <APIStatusIndicator />
+
+      {/* Routing Debug (for troubleshooting) */}
+      <RoutingDebug />
 
       {/* Error Display */}
       {appState.error && (
