@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { anonymousAuthService } from '@/lib/services/anonymous-auth';
+import { anonymousAuthService } from '@/lib/anonymous-auth';
 import { getTranslations } from '@/lib/i18n';
 import { SupportedLanguage } from '@/app/wondercam/page';
 

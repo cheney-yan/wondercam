@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { creditService } from '@/lib/services/credit-service';
-import { anonymousAuthService } from '@/lib/services/anonymous-auth';
+import { creditService } from '@/lib/credit-service';
+import { anonymousAuthService } from '@/lib/anonymous-auth';
 
 export interface CreditDisplayProps {
   position?: 'header' | 'floating' | 'modal';

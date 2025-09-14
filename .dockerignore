@@ -63,3 +63,7 @@ Thumbs.db
 # Docker
 Dockerfile
 docker-compose*.yml
+mkdir
+# Ensure app/lib files are included in the build context (we use app/lib for frontend helpers)
+!app/lib
+!app/lib/**
