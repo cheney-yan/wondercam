@@ -90,7 +90,6 @@ async def stream_v2_response(request: V2ChatRequest, user: dict) -> AsyncGenerat
             # Step 4: Stream chunks immediately without any processing
             logger.info("🚀 Direct streaming - yielding chunks ASAP...")
             async for chunk in response.aiter_text():
-                # Yield chunks immediately as they arrive
                 yield chunk
         
         logger.info("✅ Direct streaming completed")

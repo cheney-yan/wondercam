@@ -107,7 +107,7 @@ export class AIServiceEventSource {
       const hasAudio = contents.some(c => c.inlineData?.mimeType?.startsWith('audio/'));
 
       console.log('🎯 EventSource V2 Enhanced API Request:', {
-        endpoint: '/v2/echat-sse',
+        endpoint: '/v2/echat',
         contentParts: contents.length,
         language,
         sessionId,
@@ -119,7 +119,7 @@ export class AIServiceEventSource {
       // Create a special EventSource endpoint that accepts POST data via query parameters
       // We'll need to create this endpoint on the server
       const encodedRequest = encodeURIComponent(JSON.stringify(requestBody));
-      const url = `/v2/echat-sse?data=${encodedRequest}&auth=${encodeURIComponent(authToken)}`;
+      const url = `http://localhost:18000/v2/echat?data=${encodedRequest}&auth=${encodeURIComponent(authToken)}`;
 
       console.log('🔗 EventSource URL:', url.substring(0, 100) + '...');
 
@@ -138,7 +138,8 @@ export class AIServiceEventSource {
               const messageTime = Date.now();
               messageCount++;
               
-              console.log(`📨 EventSource message #${messageCount} at +${messageTime - startTime}ms:`, 
+              const timestamp = new Date().toISOString();
+              console.log(`📨 EventSource [${timestamp}] message #${messageCount} at +${messageTime - startTime}ms:`,
                 event.data.substring(0, 100) + (event.data.length > 100 ? '...' : ''));
               
               try {
@@ -153,12 +154,14 @@ export class AIServiceEventSource {
                         if (candidate.content?.parts) {
                           for (const part of candidate.content.parts) {
                             if (part.text) {
-                              console.log(`✅ EventSource: Immediate text received at +${messageTime - startTime}ms:`, part.text);
+                              const textTimestamp = new Date().toISOString();
+                              console.log(`✅ EventSource [${textTimestamp}]: Immediate text received at +${messageTime - startTime}ms:`, part.text);
                               const promise = Promise.resolve(part.text);
                               messagePromises.push(promise);
                               return promise;
                             } else if (part.inlineData?.data) {
-                              console.log(`🖼️ EventSource: Image chunk received at +${messageTime - startTime}ms`);
+                              const imageTimestamp = new Date().toISOString();
+                              console.log(`🖼️ EventSource [${imageTimestamp}]: Image chunk received at +${messageTime - startTime}ms`);
                               const promise = Promise.resolve({ type: 'image' as const, data: part.inlineData.data });
                               messagePromises.push(promise);
                               return promise;
@@ -169,7 +172,8 @@ export class AIServiceEventSource {
                     }
                     // Handle status message format
                     else if ('type' in data && 'data' in data) {
-                      console.log(`📋 EventSource: Status message at +${messageTime - startTime}ms:`, data);
+                      const statusTimestamp = new Date().toISOString();
+                      console.log(`📋 EventSource [${statusTimestamp}]: Status message at +${messageTime - startTime}ms:`, data);
                       const promise = Promise.resolve({ type: data.type, data: data.data });
                       messagePromises.push(promise);
                       return promise;

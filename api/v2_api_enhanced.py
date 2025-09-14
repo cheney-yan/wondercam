@@ -144,21 +144,11 @@ async def stream_v2_enhanced_response_with_flush(request: V2ChatRequest, user: d
     """Enhanced streaming V2 API with forced network flushing"""
     
     try:
-        # Step 1: IMMEDIATE "OK" confirmation with multiple chunks to force browser parsing
-        logger.info("✅ Sending immediate OK acknowledgment with forced chunks...")
+        # Step 1: IMMEDIATE "OK" confirmation
+        logger.info("✅ Sending immediate OK acknowledgment...")
         ok_response = formatter.format_immediate_response()
-        
-        # Send OK message
         yield ok_response.encode('utf-8')
         logger.info("🚀 OK message yielded")
-        
-        # Send multiple empty SSE comments to force browser to start processing
-        # This overcomes browser buffering thresholds
-        for i in range(3):
-            yield f": heartbeat {i+1}\n\n".encode('utf-8')
-            await asyncio.sleep(0.001)  # 1ms between chunks
-        
-        logger.info("💓 Sent heartbeat chunks to force browser processing")
 
         # Step 2: Initialize translator and authentication AFTER OK message
         logger.info("🔧 Initializing translator and authentication...")

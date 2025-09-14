@@ -54,7 +54,7 @@ services:
       options:
         max-size: "1m"
         max-file: "3"
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--no-access-log", "--loop", "asyncio"]
 
   # Optional: Add a file watcher service for additional monitoring
   # file-watcher:

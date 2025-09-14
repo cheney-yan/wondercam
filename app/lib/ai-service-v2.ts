@@ -215,7 +215,8 @@ export class AIServiceV2 {
         hasAudio
       });
 
-      const response = await fetch('/v2/echat', {
+      // Use direct API server connection to avoid Next.js proxy buffering
+      const response = await fetch('http://localhost:18000/v2/echat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -252,17 +253,32 @@ export class AIServiceV2 {
 
           // Process chunks immediately as they arrive
           const chunk = decoder.decode(value, { stream: true });
-          console.log('📨 V2 API: Received raw chunk:', chunk.length, 'bytes at', Date.now());
+          const timestamp = new Date().toISOString();
+          const relativeTime = Date.now();
+          console.log(`📨 V2 API [${timestamp}]: Received raw chunk:`, chunk.length, 'bytes at', relativeTime);
           
           buffer += chunk;
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
 
-          for (const line of lines) {
-            if (line.startsWith('data:')) {
-              try {
-                const jsonStr = line.substring(5).trim();
-                console.log('📡 V2 API: Processing SSE line at', Date.now(), ':', jsonStr.substring(0, 100) + (jsonStr.length > 100 ? '...' : ''));
+          console.log(`🔍 V2 API [${timestamp}]: Split ${chunk.length}-byte chunk into ${lines.length} lines, buffer remaining: ${buffer.length} chars`);
+          
+          // Show first 200 chars of the raw chunk for debugging
+          const chunkPreview = chunk.substring(0, 200).replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+          console.log(`🔍 RAW CHUNK PREVIEW: "${chunkPreview}${chunk.length > 200 ? '...' : ''}"`);
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const lineTimestamp = new Date().toISOString();
+            const lineIndex = i + 1;
+            
+            console.log(`📋 V2 API [${lineTimestamp}]: Processing line ${lineIndex}/${lines.length}: "${line.substring(0, 50)}${line.length > 50 ? '...' : ''}"`);
+              if (line.startsWith('data:')) {
+                try {
+                  const jsonStr = line.substring(5).trim();
+                  const dataTimestamp = new Date().toISOString();
+                  const dataRelativeTime = Date.now();
+                  console.log(`📡 V2 API [${dataTimestamp}]: Processing SSE data line at`, dataRelativeTime, ':', jsonStr.substring(0, 100) + (jsonStr.length > 100 ? '...' : ''));
                 
                 if (jsonStr && jsonStr !== '[DONE]') {
                   const data = JSON.parse(jsonStr);
@@ -280,9 +296,11 @@ export class AIServiceV2 {
                     // Handle V2ResponseChunk format (preprocessing messages)
                     if ('type' in data && 'content' in data && 'is_final' in data) {
                       // This is a V2ResponseChunk (preprocessing/system message)
-                      console.log('🔧 V2ResponseChunk detected:', { type: data.type, content: data.content?.substring(0, 50) });
+                      const chunkTimestamp = new Date().toISOString();
+                      console.log(`🔧 V2ResponseChunk [${chunkTimestamp}] detected:`, { type: data.type, content: data.content?.substring(0, 50) });
                       if (data.type === 'system') {
-                        console.log('🔧 System message:', data.content);
+                        const systemTimestamp = new Date().toISOString();
+                        console.log(`🔧 System message [${systemTimestamp}]:`, data.content);
                         yield data;
                       } else if (data.type === 'error') {
                         console.error('❌ V2 API chunk error:', data.content);
@@ -294,7 +312,8 @@ export class AIServiceV2 {
                     // Handle status message format
                     else if ('type' in data && 'data' in data) {
                       // This is a simple status message like {"type": "text", "data": "Received, processing..."}
-                      console.log('📋 Status message detected:', { type: data.type, data: data.data?.substring(0, 50) });
+                      const statusTimestamp = new Date().toISOString();
+                      console.log(`📋 Status message [${statusTimestamp}] detected:`, { type: data.type, data: data.data?.substring(0, 50) });
                       yield { type: data.type, data: data.data };
                     }
                     // Handle raw Vertex AI format (direct streaming)
@@ -303,10 +322,14 @@ export class AIServiceV2 {
                         if (candidate.content?.parts) {
                           for (const part of candidate.content.parts) {
                             if (part.text) {
-                              console.log('📨 V2 API: Received text chunk:', part.text);
+                              const textTimestamp = new Date().toISOString();
+                              const textRelativeTime = Date.now();
+                              console.log(`📨 V2 API [${textTimestamp}]: Received text chunk at ${textRelativeTime}:`, part.text);
                               yield part.text;
                             } else if (part.inlineData?.data) {
-                              console.log('🖼️ V2 API: Received image chunk');
+                              const imageTimestamp = new Date().toISOString();
+                              const imageRelativeTime = Date.now();
+                              console.log(`🖼️ V2 API [${imageTimestamp}]: Received image chunk at ${imageRelativeTime}`);
                               yield { type: 'image', data: part.inlineData.data };
                             }
                           }
@@ -318,11 +341,20 @@ export class AIServiceV2 {
                     console.warn('⚠️ Unexpected raw data format:', data);
                   }
                 }
-              } catch (e) {
-                console.warn('⚠️ Failed to parse V2 streaming data:', line, e);
+                } catch (e) {
+                  console.warn('⚠️ Failed to parse V2 streaming data:', line, e);
+                }
+              } else if (line.startsWith(':')) {
+                // SSE comment line (our padding)
+                console.log(`💬 V2 API [${lineTimestamp}]: SSE comment (padding): ${line.length} chars`);
+              } else if (line.trim() === '') {
+                // Empty line (event separator)
+                console.log(`📄 V2 API [${lineTimestamp}]: Empty line (event separator)`);
+              } else if (line.trim() !== '') {
+                // Non-empty, non-data, non-comment line
+                console.log(`❓ V2 API [${lineTimestamp}]: Unknown line type: "${line}"`);
               }
             }
-          }
         }
       } finally {
         reader.releaseLock();
@@ -459,7 +491,7 @@ export class AIServiceV2 {
    */
   async getCapabilities(): Promise<any> {
     try {
-      const response = await fetch('/v2/ecapabilities');
+      const response = await fetch('http://localhost:18000/v2/ecapabilities');
       if (!response.ok) {
         throw new Error(`Failed to get capabilities: ${response.status}`);
       }
@@ -482,7 +514,7 @@ export class AIServiceV2 {
    */
   async healthCheck(): Promise<{ status: string; version: string; timestamp: string }> {
     try {
-      const response = await fetch('/v2/ehealth');
+      const response = await fetch('http://localhost:18000/v2/ehealth');
       if (!response.ok) {
         return {
           status: 'error',
