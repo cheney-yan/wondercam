@@ -378,83 +378,106 @@ export function ChatComponent({
     if (!message || isLoading || hasStreamingMessage) return;
 
     /**
-     * When user has zoomed/panned the ORIGINAL photo (slide 0, key 'initial-photo'),
-     * capture ONLY the currently visible viewport portion and make it available
-     * to the parent (page) via a temporary global. The parent will substitute this
-     * cropped view when sending to the AI service so only the visualized region
-     * is analyzed.
+     * NEW: Determine which photo the user is currently viewing and pass that info
+     * This ensures the AI analyzes the photo the user is actually looking at
      */
     try {
-      if (
-        session.photo &&                         // there is an initial photo
-        currentIndex === 0 &&                    // we are on the first slide
-        zoomScale > 1 &&                         // user actually zoomed in
-        imgContainerRef.current &&
-        activeImageRef.current
-      ) {
-        const container = imgContainerRef.current;
-        const imgEl = activeImageRef.current;
-
-        const containerRect = container.getBoundingClientRect();
-        const containerWidth = Math.round(containerRect.width);
-        const containerHeight = Math.round(containerRect.height);
-
-        // Natural dimensions
-        const naturalWidth = imgEl.naturalWidth;
-        const naturalHeight = imgEl.naturalHeight;
-
-        // Determine base scale-to-fit factor (before user zoom) similar to object-contain logic
-        // We replicate orientation logic: image is sized to fully fit within container.
-        const widthRatio = containerWidth / naturalWidth;
-        const heightRatio = containerHeight / naturalHeight;
-        const scaleToFit = Math.min(widthRatio, heightRatio);
-
-        // Canvas sized to viewport (what user actually sees)
-        const canvas = document.createElement('canvas');
-        canvas.width = containerWidth;
-        canvas.height = containerHeight;
-        const ctx = canvas.getContext('2d');
-
-        if (ctx) {
-          ctx.save();
-          // Translate to center + pan (pan applied prior to scaling in CSS transform order)
-            // NOTE: In CSS we apply translate then scale from center. We approximate the same.
-          ctx.translate(containerWidth / 2 + panX, containerHeight / 2 + panY);
-          ctx.scale(zoomScale, zoomScale);
-
-          // Draw the image centered with the base fit size
-          const drawWidth = naturalWidth * scaleToFit;
-          const drawHeight = naturalHeight * scaleToFit;
-          ctx.drawImage(imgEl, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-          ctx.restore();
-
-          // Export cropped (viewport) JPEG (higher quality since we already limited area)
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-
-          (window as any).wondercamCroppedView = {
-            dataUrl,
-            width: canvas.width,
-            height: canvas.height
-          };
-          console.log('📐 Captured cropped viewport for AI analysis', {
-            canvas: { w: canvas.width, h: canvas.height },
-            natural: { w: naturalWidth, h: naturalHeight },
-            scaleToFit,
-            zoomScale,
-            panX,
-            panY
-          });
-        }
-      } else {
-        // Clear any previous cropped view if conditions no longer apply
-        if ((window as any).wondercamCroppedView) {
-          delete (window as any).wondercamCroppedView;
-        }
-      }
-    } catch (cropError) {
-      console.warn('⚠️ Failed to generate cropped view, falling back to full image.', cropError);
+      // Clear any previous photo context
       if ((window as any).wondercamCroppedView) {
         delete (window as any).wondercamCroppedView;
+      }
+      if ((window as any).wondercamCurrentPhotoContext) {
+        delete (window as any).wondercamCurrentPhotoContext;
+      }
+
+      // Determine which photo the user is currently viewing
+      if (images.length > 0 && currentIndex < images.length) {
+        const currentImage = images[currentIndex];
+        console.log('📷 User is viewing image:', {
+          index: currentIndex,
+          key: currentImage.key,
+          isInitialPhoto: currentImage.key === 'initial-photo',
+          totalImages: images.length
+        });
+
+        // Set the current photo context
+        (window as any).wondercamCurrentPhotoContext = {
+          imageKey: currentImage.key,
+          imageData: currentImage.data,
+          index: currentIndex,
+          isInitialPhoto: currentImage.key === 'initial-photo'
+        };
+
+        // Handle cropped view for original photo (slide 0) when zoomed
+        if (
+          session.photo &&                         // there is an initial photo
+          currentIndex === 0 &&                    // we are on the first slide (original photo)
+          currentImage.key === 'initial-photo' &&  // confirm this is the initial photo
+          zoomScale > 1 &&                         // user actually zoomed in
+          imgContainerRef.current &&
+          activeImageRef.current
+        ) {
+          const container = imgContainerRef.current;
+          const imgEl = activeImageRef.current;
+
+          const containerRect = container.getBoundingClientRect();
+          const containerWidth = Math.round(containerRect.width);
+          const containerHeight = Math.round(containerRect.height);
+
+          // Natural dimensions
+          const naturalWidth = imgEl.naturalWidth;
+          const naturalHeight = imgEl.naturalHeight;
+
+          // Determine base scale-to-fit factor (before user zoom) similar to object-contain logic
+          const widthRatio = containerWidth / naturalWidth;
+          const heightRatio = containerHeight / naturalHeight;
+          const scaleToFit = Math.min(widthRatio, heightRatio);
+
+          // Canvas sized to viewport (what user actually sees)
+          const canvas = document.createElement('canvas');
+          canvas.width = containerWidth;
+          canvas.height = containerHeight;
+          const ctx = canvas.getContext('2d');
+
+          if (ctx) {
+            ctx.save();
+            // Translate to center + pan (pan applied prior to scaling in CSS transform order)
+            ctx.translate(containerWidth / 2 + panX, containerHeight / 2 + panY);
+            ctx.scale(zoomScale, zoomScale);
+
+            // Draw the image centered with the base fit size
+            const drawWidth = naturalWidth * scaleToFit;
+            const drawHeight = naturalHeight * scaleToFit;
+            ctx.drawImage(imgEl, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+            ctx.restore();
+
+            // Export cropped (viewport) JPEG (higher quality since we already limited area)
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+
+            (window as any).wondercamCroppedView = {
+              dataUrl,
+              width: canvas.width,
+              height: canvas.height
+            };
+            console.log('📐 Captured cropped viewport for AI analysis', {
+              canvas: { w: canvas.width, h: canvas.height },
+              natural: { w: naturalWidth, h: naturalHeight },
+              scaleToFit,
+              zoomScale,
+              panX,
+              panY
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to determine current photo context, falling back to session photo.', error);
+      // Clean up any partial state
+      if ((window as any).wondercamCroppedView) {
+        delete (window as any).wondercamCroppedView;
+      }
+      if ((window as any).wondercamCurrentPhotoContext) {
+        delete (window as any).wondercamCurrentPhotoContext;
       }
     }
 
@@ -818,7 +841,9 @@ export function ChatComponent({
             className="absolute inset-x-0 top-4 flex justify-center px-4 z-20"
           >
             <div
-              className={`max-w-xl text-sm leading-relaxed px-4 py-3 rounded-2xl bg-black/70 backdrop-blur-md border border-white/10 text-white shadow-lg transition-opacity duration-700 ${overlayVisible ? 'opacity-100' : 'opacity-0'}`}
+              className={`max-w-xl text-sm leading-relaxed px-4 py-3 rounded-2xl bg-black/70 backdrop-blur-md border border-white/10 text-white shadow-lg transition-opacity duration-700 ${
+                overlayVisible ? 'opacity-100' : 'opacity-0'
+              }`}
             >
               {overlayText}
               {/* Streaming cursor */}

@@ -388,39 +388,73 @@ export default function WonderCamPage() {
 
     console.log('Sending message:', message);
 
-    // Determine if we have a cropped viewport version of the current photo (set by ChatComponent on send)
-    let effectivePhoto: CapturedPhoto | null = appState.currentPhoto;
+    // Determine which photo the user is currently viewing and should be sent to AI
+    let effectivePhoto: CapturedPhoto | null = null;
     try {
+      // Check if we have current photo context (which image user is viewing)
+      const photoContext = (window as any).wondercamCurrentPhotoContext;
       const croppedView = (window as any).wondercamCroppedView;
-      if (
-        croppedView &&
-        appState.currentPhoto
-      ) {
-        // Build a transient photo object representing only the visible (cropped) region
-        const { dataUrl, width, height } = croppedView;
-        const fileSizeApprox = Math.round(dataUrl.length * 0.75);
-        effectivePhoto = {
-          id: appState.currentPhoto.id + '-cropped-' + Date.now(),
-            // Keep original id as context reference? We'll use new id so AI context distinguishes
-          imageData: dataUrl,
-          compressedData: dataUrl, // Already a viewport-sized JPEG; reuse
-          capturedAt: new Date(),
-          dimensions: {
-            width,
-            height,
-            aspectRatio: width / height
-          },
-          fileSize: fileSizeApprox
-        };
-        console.log('🔍 Using cropped viewport photo for AI message', {
-          originalId: appState.currentPhoto.id,
-          croppedId: effectivePhoto.id,
-          width,
-          height
-        });
+
+      console.log('📷 Photo context analysis:', {
+        hasPhotoContext: !!photoContext,
+        hasCroppedView: !!croppedView,
+        hasSessionPhoto: !!appState.currentPhoto,
+        sessionPhotoId: appState.currentPhoto?.id
+      });
+
+      if (photoContext) {
+        // User is viewing a specific photo - determine which one to use
+        if (photoContext.isInitialPhoto && appState.currentPhoto) {
+          // User is viewing the original photo
+          effectivePhoto = appState.currentPhoto;
+          
+          // Check if they've zoomed/cropped it
+          if (croppedView) {
+            console.log('🔍 Using cropped viewport of original photo');
+            effectivePhoto = {
+              id: appState.currentPhoto.id + '-cropped-' + Date.now(),
+              imageData: croppedView.dataUrl,
+              compressedData: croppedView.dataUrl, // Already viewport-sized JPEG
+              capturedAt: new Date(),
+              dimensions: {
+                width: croppedView.width,
+                height: croppedView.height,
+                aspectRatio: croppedView.width / croppedView.height
+              },
+              fileSize: Math.round(croppedView.dataUrl.length * 0.75)
+            };
+          }
+        } else if (!photoContext.isInitialPhoto) {
+          // User is viewing an AI-generated image - create photo object from it
+          console.log('🤖 User is viewing AI-generated image:', photoContext.imageKey);
+          effectivePhoto = {
+            id: photoContext.imageKey,
+            imageData: photoContext.imageData,
+            compressedData: photoContext.imageData, // AI images are already appropriately sized
+            capturedAt: new Date(),
+            dimensions: {
+              width: 1024, // Default AI image dimensions
+              height: 1024,
+              aspectRatio: 1
+            },
+            fileSize: Math.round(photoContext.imageData.length * 0.75)
+          };
+        }
+      } else {
+        // Fallback to session photo if no context available
+        effectivePhoto = appState.currentPhoto;
+        console.log('⚠️ No photo context, falling back to session photo:', effectivePhoto?.id);
       }
-    } catch (cropErr) {
-      console.warn('⚠️ Failed to construct cropped photo; falling back to full photo.', cropErr);
+
+      console.log('✅ Final effective photo:', {
+        id: effectivePhoto?.id,
+        hasImageData: !!effectivePhoto?.imageData,
+        hasCompressedData: !!effectivePhoto?.compressedData,
+        dimensions: effectivePhoto?.dimensions
+      });
+
+    } catch (contextErr) {
+      console.warn('⚠️ Failed to determine photo context; falling back to session photo.', contextErr);
       effectivePhoto = appState.currentPhoto;
     }
 

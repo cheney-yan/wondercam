@@ -28,15 +28,62 @@ export function CameraComponent({ user, onPhotoCapture, onError, isVisible, curr
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize cameras
+  // Initialize cameras on mount and cleanup on unmount
   useEffect(() => {
+    console.log('📹 Camera component mounted, initializing...');
     initializeCamera();
+    
     return () => {
+      console.log('📹 Camera component unmounting, cleaning up streams...');
       if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach(track => {
+          track.stop();
+          console.log('📹 Cleanup: Stopped track:', track.kind, track.label);
+        });
       }
     };
   }, []);
+
+  // Handle page visibility changes for additional power saving
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.hidden) {
+        console.log('📹 Page hidden, pausing video for power saving');
+        if (videoRef.current) {
+          videoRef.current.pause();
+        }
+      } else {
+        console.log('📹 Page visible, checking video state');
+        if (videoRef.current && stream) {
+          // Check if the stream is still active (browsers may stop inactive streams)
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack && videoTrack.readyState === 'ended') {
+            console.log('📹 Video stream ended while in background, restarting...');
+            try {
+              // Try to restart the camera with the same device
+              if (availableCameras.length > 0) {
+                await startCamera(availableCameras[currentCameraIndex].deviceId);
+              }
+            } catch (error) {
+              console.error('📹 Failed to restart camera after background:', error);
+              handleCameraError(error);
+            }
+          } else {
+            // Stream is still active, just resume playback
+            videoRef.current.play().catch(error => {
+              console.warn('📹 Failed to resume video playback:', error);
+            });
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [stream, availableCameras, currentCameraIndex]);
 
   const initializeCamera = async () => {
     try {
@@ -114,6 +161,7 @@ export function CameraComponent({ user, onPhotoCapture, onError, isVisible, curr
       handleCameraError(error);
     }
   };
+
 
   const handleCameraError = (error: any) => {
     console.error('Camera error:', error);

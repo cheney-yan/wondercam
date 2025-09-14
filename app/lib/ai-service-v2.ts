@@ -382,6 +382,7 @@ export class AIServiceV2 {
 
   /**
    * Continue conversation with V2 API - accepts ChatMessage[] for frontend compatibility
+   * Uses the photo determined by the parent component (already handles current view context)
    */
   async *continueConversation(
     messages: any[], // Accept ChatMessage[] from frontend
@@ -390,11 +391,24 @@ export class AIServiceV2 {
     photo?: CapturedPhoto
   ): AsyncGenerator<string | { type: 'image', data: string }> {
     
-    // For now, we'll use the new text with optional photo
-    // Future enhancement: incorporate full message history
+    console.log('🔄 continueConversation called with:', {
+      messagesCount: messages.length,
+      hasPhoto: !!photo,
+      photoId: photo?.id,
+      newText: newText.substring(0, 50) + '...'
+    });
+
+    // Use the photo passed from parent (parent handles current view context and cropping)
     const contents = photo
       ? this.createImageContent(newText, photo, language)
       : this.createTextContent(newText, language);
+    
+    console.log('📤 Sending to AI with:', {
+      hasImage: !!photo,
+      imageId: photo?.id,
+      contentParts: contents.length,
+      language
+    });
     
     for await (const chunk of this.chatStream(contents, language)) {
       console.log('🔍 DEBUG continueConversation chunk:', {
