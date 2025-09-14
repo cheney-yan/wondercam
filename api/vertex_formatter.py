@@ -97,3 +97,38 @@ def get_direct_reply_template(category: str) -> str:
     """Get direct reply template for specific categories"""
     from config import settings
     return settings.direct_reply_templates.get(category, settings.direct_reply_templates["general"])
+
+def format_refinement_notification(refined_prompt: str, language: str = "en") -> str:
+    """Format refinement notification message in user's language"""
+    
+    # Language-specific templates for refinement notifications
+    templates = {
+        'en': "I am asking AI to {refined_prompt}",
+        'zh': "我正在要求AI：{refined_prompt}",
+        'es': "Le estoy pidiendo a la IA que {refined_prompt}",
+        'fr': "Je demande à l'IA de {refined_prompt}",
+        'ja': "AIに次のことを求めています：{refined_prompt}"
+    }
+    
+    # Get template for language, fallback to English
+    template = templates.get(language.lower(), templates['en'])
+    
+    # Format the notification message
+    notification_text = template.format(refined_prompt=refined_prompt)
+    
+    # Create SSE format directly without relying on config settings
+    return VertexAIResponseFormatter.format_text_chunk(
+        notification_text,
+        is_final=False,
+        add_newlines=True
+    )
+
+def format_analysis_start_notification(language: str = "en") -> str:
+    """Format analysis start notification message in user's language"""
+    notification_text = "🧠..."
+    # Create SSE format
+    return VertexAIResponseFormatter.format_text_chunk(
+        notification_text,
+        is_final=False,
+        add_newlines=True
+    )

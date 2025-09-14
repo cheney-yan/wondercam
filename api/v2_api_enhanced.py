@@ -19,7 +19,7 @@ from v2_translator import V2MessageTranslator
 from auth_handler import AuthenticationHandler
 from supabase_auth import verify_token
 from config import settings
-from vertex_formatter import VertexAIResponseFormatter, get_enhanced_status_message
+from vertex_formatter import VertexAIResponseFormatter, get_enhanced_status_message, format_refinement_notification, format_analysis_start_notification
 from prompt_analyzer import AnalysisAction, AnalysisResult, get_prompt_analyzer
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,8 @@ async def run_background_analysis(request: V2ChatRequest, current_translator: V2
         result = await analyzer.analyze_prompt(
             combined_text,
             has_images,
-            timeout_seconds=settings.prompt_analysis_timeout
+            timeout_seconds=settings.prompt_analysis_timeout,
+            possible_language=request.language or 'en',
         )
         
         return AnalysisResult(
@@ -104,7 +105,7 @@ def apply_refined_prompt(request: V2ChatRequest, refined_prompt: str):
             break
 
 async def stream_from_vertex_ai(vertex_request: Any, current_translator: V2MessageTranslator) -> AsyncGenerator[str, None]:
-    """Stream response from Vertex AI"""
+    """Stream response from Vertex AI with proper resource management"""
     
     vertex_endpoint = current_translator.get_vertex_endpoint()
     access_token = auth_handler.get_access_token()
@@ -114,7 +115,11 @@ async def stream_from_vertex_ai(vertex_request: Any, current_translator: V2Messa
         "Authorization": f"Bearer {access_token}"
     }
     
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    client = None
+    response = None
+    
+    try:
+        client = httpx.AsyncClient(timeout=60.0)
         logger.info(f"🔗 Calling Vertex AI endpoint: {vertex_endpoint}?alt=sse")
         
         response = await client.post(
@@ -129,20 +134,48 @@ async def stream_from_vertex_ai(vertex_request: Any, current_translator: V2Messa
             error_text = response.text
             logger.error(f"❌ Vertex AI error: {response.status_code} - {error_text}")
             
-            # Format error as Vertex AI response
+            # Format error as Vertex AI response and ensure it ends properly
             error_message = "I encountered an issue processing your request. Please try again."
             yield formatter.format_error_response(error_message)
             return
         
         # Stream Vertex AI response directly - already in correct format
         logger.info("🚀 Streaming Vertex AI response directly...")
+        chunk_count = 0
+        
         async for chunk in response.aiter_text():
-            # Vertex AI chunks are already in the correct format
-            yield chunk
+            if chunk.strip():  # Only yield non-empty chunks
+                chunk_count += 1
+                yield chunk
+        
+        logger.info(f"✅ Vertex AI streaming completed: {chunk_count} chunks")
+        
+    except Exception as e:
+        logger.error(f"❌ Vertex AI streaming error: {e}")
+        # Ensure we send an error response even if streaming fails
+        error_message = "I apologize, but I encountered a streaming error. Please try again."
+        yield formatter.format_error_response(error_message)
+        
+    finally:
+        # Ensure client is always closed to prevent resource leaks
+        if response:
+            try:
+                await response.aclose()
+                logger.debug("🔒 Vertex AI response closed")
+            except Exception as e:
+                logger.warning(f"⚠️ Error closing response: {e}")
+        
+        if client:
+            try:
+                await client.aclose()
+                logger.debug("🔒 HTTP client closed")
+            except Exception as e:
+                logger.warning(f"⚠️ Error closing client: {e}")
 
 async def stream_v2_enhanced_response_with_flush(request: V2ChatRequest, user: dict) -> AsyncGenerator[bytes, None]:
-    """Enhanced streaming V2 API with forced network flushing"""
+    """Enhanced streaming V2 API with forced network flushing and proper connection management"""
     
+    analysis_task = None
     try:
         # Step 1: IMMEDIATE "OK" confirmation
         logger.info("✅ Sending immediate OK acknowledgment...")
@@ -163,23 +196,36 @@ async def stream_v2_enhanced_response_with_flush(request: V2ChatRequest, user: d
         # Only do analysis if enabled
         if settings.prompt_analysis_enabled:
             logger.info("🧠 Starting background prompt analysis...")
+            
+            # Notify user that analysis is starting
+            analysis_start_notification = format_analysis_start_notification(
+                request.language or 'en'
+            )
+            yield analysis_start_notification.encode('utf-8')
+            
             try:
                 # Start analysis task but don't wait for it
                 analysis_task = asyncio.create_task(
                     run_background_analysis(request, current_translator)
                 )
                 
-                # Try to get quick analysis result (very short timeout for responsiveness)
-                analysis_result = await asyncio.wait_for(analysis_task, timeout=0.1)
+                # Try to get analysis result (allow more time since user is notified)
+                analysis_result = await asyncio.wait_for(analysis_task, timeout=settings.prompt_analysis_quick_timeout)
                 logger.info(f"✅ Quick analysis completed: {analysis_result.action}")
+                analysis_task = None  # Clear reference since task completed
                 
             except asyncio.TimeoutError:
                 logger.info("⏰ Analysis taking too long, proceeding with pass-through for responsiveness")
                 # Cancel the analysis task to free resources
-                analysis_task.cancel()
+                if analysis_task:
+                    analysis_task.cancel()
+                    analysis_task = None
                 
             except Exception as e:
                 logger.warning(f"⚠️ Analysis error, proceeding with pass-through: {e}")
+                if analysis_task:
+                    analysis_task.cancel()
+                    analysis_task = None
         else:
             logger.info("🔄 Analysis disabled, using pass-through")
         
@@ -189,31 +235,64 @@ async def stream_v2_enhanced_response_with_flush(request: V2ChatRequest, user: d
             logger.info("🛑 Streaming direct reply")
             direct_response = formatter.format_direct_reply(analysis_result.direct_reply)
             yield direct_response.encode('utf-8')
+            logger.info("🏁 Direct reply streaming completed")
             return
         
-        # Step 5: Apply refined prompt if needed (minimal processing)
-        if analysis_result.action == AnalysisAction.REFINE and analysis_result.refined_prompt:
+        # Step 5: Apply refined prompt if needed and notify user
+        if analysis_result.action == AnalysisAction.REFINED and analysis_result.refined_prompt:
             logger.info("✨ Applying refined prompt")
             apply_refined_prompt(request, analysis_result.refined_prompt)
+            
+            # Send refinement notification to user
+            refinement_notification = format_refinement_notification(
+                analysis_result.refined_prompt,
+                request.language or 'en'
+            )
+            yield refinement_notification.encode('utf-8')
         
         # Step 6: Stream from Vertex AI
         logger.info("🎯 Starting Vertex AI streaming...")
         vertex_request = current_translator.v2_to_vertex(request)
         
+        vertex_chunk_count = 0
         async for vertex_chunk in stream_from_vertex_ai(vertex_request, current_translator):
-            yield vertex_chunk.encode('utf-8')
+            if vertex_chunk.strip():  # Only yield non-empty chunks
+                vertex_chunk_count += 1
+                yield vertex_chunk.encode('utf-8')
         
-        logger.info("✅ Enhanced streaming completed successfully")
+        logger.info(f"✅ Enhanced streaming completed successfully: {vertex_chunk_count} chunks")
+        
+    except asyncio.CancelledError:
+        logger.info("🛑 Streaming cancelled by client")
+        raise  # Re-raise to properly handle cancellation
         
     except Exception as e:
         logger.error(f"❌ Enhanced streaming error: {e}")
-        error_message = f"I apologize, but I encountered an error processing your request.\n\nPlease try again."
-        error_response = formatter.format_error_response(error_message)
-        yield error_response.encode('utf-8')
+        try:
+            error_message = f"I apologize, but I encountered an error processing your request.\n\nPlease try again."
+            error_response = formatter.format_error_response(error_message)
+            yield error_response.encode('utf-8')
+        except Exception as cleanup_error:
+            logger.error(f"❌ Error during cleanup: {cleanup_error}")
+    
+    finally:
+        # Cleanup any remaining tasks
+        if analysis_task and not analysis_task.done():
+            logger.info("🧹 Cleaning up analysis task")
+            analysis_task.cancel()
+            try:
+                await analysis_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning(f"⚠️ Error during analysis task cleanup: {e}")
+        
+        logger.info("🔒 Stream connection cleanup completed")
 
 async def stream_v2_enhanced_response(request: V2ChatRequest, user: dict) -> AsyncGenerator[str, None]:
     """Enhanced streaming V2 API with immediate response and background analysis"""
     
+    analysis_task = None
     try:
         # Step 1: IMMEDIATE "OK" confirmation - send this FIRST before any blocking operations
         logger.info("✅ Sending immediate OK acknowledgment...")
@@ -233,23 +312,36 @@ async def stream_v2_enhanced_response(request: V2ChatRequest, user: dict) -> Asy
         # Only do analysis if enabled
         if settings.prompt_analysis_enabled:
             logger.info("🧠 Starting background prompt analysis...")
+            
+            # Notify user that analysis is starting
+            analysis_start_notification = format_analysis_start_notification(
+                request.language or 'en'
+            )
+            yield analysis_start_notification
+            
             try:
                 # Start analysis task but don't wait for it
                 analysis_task = asyncio.create_task(
                     run_background_analysis(request, current_translator)
                 )
                 
-                # Try to get quick analysis result (very short timeout for responsiveness)
-                analysis_result = await asyncio.wait_for(analysis_task, timeout=0.1)
+                # Try to get analysis result (allow more time since user is notified)
+                analysis_result = await asyncio.wait_for(analysis_task, timeout=settings.prompt_analysis_quick_timeout)
                 logger.info(f"✅ Quick analysis completed: {analysis_result.action}")
+                analysis_task = None  # Clear reference since task completed
                 
             except asyncio.TimeoutError:
                 logger.info("⏰ Analysis taking too long, proceeding with pass-through for responsiveness")
                 # Cancel the analysis task to free resources
-                analysis_task.cancel()
+                if analysis_task:
+                    analysis_task.cancel()
+                    analysis_task = None
                 
             except Exception as e:
                 logger.warning(f"⚠️ Analysis error, proceeding with pass-through: {e}")
+                if analysis_task:
+                    analysis_task.cancel()
+                    analysis_task = None
         else:
             logger.info("🔄 Analysis disabled, using pass-through")
         
@@ -258,26 +350,58 @@ async def stream_v2_enhanced_response(request: V2ChatRequest, user: dict) -> Asy
             # Stream direct reply as final response
             logger.info("🛑 Streaming direct reply")
             yield formatter.format_direct_reply(analysis_result.direct_reply)
+            logger.info("🏁 Direct reply streaming completed")
             return
         
-        # Step 5: Apply refined prompt if needed (minimal processing)
-        if analysis_result.action == AnalysisAction.REFINE and analysis_result.refined_prompt:
+        # Step 5: Apply refined prompt if needed and notify user
+        if analysis_result.action == AnalysisAction.REFINED and analysis_result.refined_prompt:
             logger.info("✨ Applying refined prompt")
             apply_refined_prompt(request, analysis_result.refined_prompt)
+            
+            # Send refinement notification to user
+            refinement_notification = format_refinement_notification(
+                analysis_result.refined_prompt,
+                request.language or 'en'
+            )
+            yield refinement_notification
         
         # Step 6: Stream from Vertex AI
         logger.info("🎯 Starting Vertex AI streaming...")
         vertex_request = current_translator.v2_to_vertex(request)
         
+        vertex_chunk_count = 0
         async for vertex_chunk in stream_from_vertex_ai(vertex_request, current_translator):
-            yield vertex_chunk
+            if vertex_chunk.strip():  # Only yield non-empty chunks
+                vertex_chunk_count += 1
+                yield vertex_chunk
         
-        logger.info("✅ Enhanced streaming completed successfully")
+        logger.info(f"✅ Enhanced streaming completed successfully: {vertex_chunk_count} chunks")
+        
+    except asyncio.CancelledError:
+        logger.info("🛑 Streaming cancelled by client")
+        raise  # Re-raise to properly handle cancellation
         
     except Exception as e:
         logger.error(f"❌ Enhanced streaming error: {e}")
-        error_message = f"I apologize, but I encountered an error processing your request.\n\nPlease try again."
-        yield formatter.format_error_response(error_message)
+        try:
+            error_message = f"I apologize, but I encountered an error processing your request.\n\nPlease try again."
+            yield formatter.format_error_response(error_message)
+        except Exception as cleanup_error:
+            logger.error(f"❌ Error during cleanup: {cleanup_error}")
+    
+    finally:
+        # Cleanup any remaining tasks
+        if analysis_task and not analysis_task.done():
+            logger.info("🧹 Cleaning up analysis task")
+            analysis_task.cancel()
+            try:
+                await analysis_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning(f"⚠️ Error during analysis task cleanup: {e}")
+        
+        logger.info("🔒 Stream connection cleanup completed")
 
 @v2_enhanced_router.post("/echat")
 async def v2_enhanced_chat_endpoint(

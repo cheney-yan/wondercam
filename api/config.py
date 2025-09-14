@@ -18,13 +18,14 @@ class Settings(BaseSettings):
     debug: bool = False
     
     # Prompt Analysis Configuration
-    prompt_analysis_enabled: bool = False  # Disabled for immediate response
-    prompt_analysis_timeout: int = 20  # seconds
-    prompt_analysis_model: str = "gemini-2.5-flash"
+    prompt_analysis_enabled: bool = True  # Enable intelligent analysis
+    prompt_analysis_timeout: int = 20  # seconds - full analysis timeout
+    prompt_analysis_quick_timeout: float = 8.0  # seconds - allow more time since we notify user
+    prompt_analysis_model: str = "gemini-2.5-flash-lite"
     
     # Message formatting settings
     add_message_separation: bool = True
-    immediate_response_text: str = "OK. "
+    immediate_response_text: str = "🤖"
     use_simplified_format: bool = True
     
     # Status messages with better formatting

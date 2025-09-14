@@ -149,7 +149,7 @@ class V2MessageTranslator:
                     request._direct_reply = analysis_result.direct_reply
                     return
                     
-                elif analysis_result.action == AnalysisAction.REFINE:
+                elif analysis_result.action == AnalysisAction.REFINED:
                     # Apply refined prompt
                     logger.info("✨ Analysis suggests refinement - updating request")
                     if analysis_result.refined_prompt:

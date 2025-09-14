@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class AnalysisAction(str, Enum):
     """Prompt analysis action types"""
-    REFINE = "refine"           # Enhance vague/unclear prompts
+    REFINED = "refined"           # Enhance vague/unclear prompts
     DIRECT_REPLY = "direct_reply"  # Reply directly to inappropriate/nonsensical requests
     PASS_THROUGH = "pass_through"  # Continue with original prompt
 
@@ -49,51 +49,139 @@ class PromptAnalyzer:
             credentials_path=settings.google_application_credentials
         )
         self.analysis_prompts = self._load_analysis_prompts()
+
         
     def _load_analysis_prompts(self) -> Dict[str, str]:
-        """Load analysis prompt templates"""
+        """Load analysis prompt templates based on prompt_enhander.md"""
         return {
-            "main_analysis": """You are a smart prompt refinement AI. Analyze the user's message and decide:
+            "main_analysis": """Analyze and enhance prompts for image generation.
 
-1. **REFINE**: If unclear, vague, or could benefit from enhancement
-2. **DIRECT_REPLY**: If inappropriate, nonsensical, or should be declined
-3. **PASS_THROUGH**: If clear, specific, and appropriate
+**Task**: Decide action for user input:
+- "refined": Enhance vague/unclear prompts with specific details
+- "direct_reply": Reply to inappropriate/nonsensical requests
+- "pass_through": Continue with clear, well-structured prompts
+
+**Rules**:
+- Keep responses CONCISE (max 50 words each)
+- Use detected language: {possible_language}
+- For images: focus on visual analysis
+- For text: focus on clarity and specificity
+
+**JSON Response** (MUST be complete and valid):
+{{
+  "action": "refined|direct_reply|pass_through",
+  "refined_prompt": "Short enhanced prompt (if refined)",
+  "direct_reply": "Brief helpful response (if direct_reply)",
+  "confidence": 0.8,
+  "reasoning": "Brief reason"
+}}
+
+User: "{user_message}"
+Language: {possible_language}
+Has images: {has_images}""",
+
+            "image_analysis": """You are analyzing a user request that includes images. Based on the prompt enhancer template:
+
+**Decisions:**
+1. **refined**: If the request is unclear about what to do with the image - enhance the prompt for better results
+2. **direct_reply**: If the request is inappropriate or nonsensical regarding the image
+3. **pass_through**: If the image request is clear and well-structured
 
 User message: "{user_message}"
+Possible Language: "{possible_language}"
 Has images: {has_images}
 
-Image Context Guidelines:
-- If user has images: Consider visual analysis context (describe, analyze, identify, compare images)
-- If no images: Focus on text-only enhancement opportunities
-- For image + vague text: Suggest specific image analysis actions
+Consider visual analysis context (describe, analyze, identify, compare images).
+Respond in JSON format with action, refined_prompt/direct_reply, confidence, and reasoning.""",
 
-For DIRECT_REPLY responses, be polite, helpful, and offer alternatives when possible.
-For REFINE responses, make prompts specific and actionable while preserving user intent.
+            "creative_requests": """You are handling a creative image generation request. Based on the enhancement template:
 
-Respond in JSON format:
-{{
-  "action": "refine|direct_reply|pass_through",
-  "refined_prompt": "Enhanced specific prompt (only if action=refine)",
-  "direct_reply": "Polite, helpful response with alternatives (only if action=direct_reply)",
-  "confidence": 0.85,
-  "reasoning": "Brief explanation"
-}}""",
-            
-            "vague_enhancement": """The user's request is vague. Create a specific, actionable prompt that:
-1. Preserves their original intent
-2. Adds helpful context and structure
-3. Guides toward a useful response
+**Focus on:**
+- Making prompts specific and actionable for image generation
+- Adding missing artistic details (style, composition, lighting, etc.)
+- Clarifying technical specifications if needed
+- Using the detected or possible language appropriately
 
-Original: "{original_prompt}"
-Enhanced prompt: """
+User message: "{user_message}"
+Possible Language: "{possible_language}"
+Has images: {has_images}
+
+Enhance vague creative requests with specific artistic requirements and technical details.
+Respond in JSON format with action, refined_prompt/direct_reply, confidence, and reasoning."""
         }
+    def _validate_message_quality(self, user_message: str) -> Optional[AnalysisResult]:
+        """
+        Validate message quality and determine if analysis should be skipped.
+        
+        Args:
+            user_message: The user message to validate
+            
+        Returns:
+            AnalysisResult if validation fails, None if validation passes
+        """
+        # Handle None/empty messages
+        if user_message is None:
+            return AnalysisResult(
+                action=AnalysisAction.DIRECT_REPLY,
+                direct_reply="😍",
+                reasoning="Message is None"
+            )
+        
+        # Normalize whitespace and check effective length
+        normalized_message = user_message.strip()
+        
+        if not normalized_message:
+            return AnalysisResult(
+                action=AnalysisAction.DIRECT_REPLY,
+                direct_reply="👌🏻",
+                reasoning="Message is empty after normalization"
+            )
+        
+        # Check for spam-like patterns (repeated characters)
+        if self._is_spam_like(normalized_message):
+            return AnalysisResult(
+                action=AnalysisAction.DIRECT_REPLY,
+                direct_reply="👋",
+                reasoning="Spam-like pattern detected"
+            )
+        
+        # Message passes all validations
+        return None
     
+    def _is_spam_like(self, message: str) -> bool:
+        """
+        Check if message contains spam-like patterns.
+        
+        Args:
+            message: The normalized message to check
+            
+        Returns:
+            True if spam-like patterns are detected
+        """
+        if len(message) < 10:  # Skip check for very short messages
+            return False
+        
+        # Check for excessive character repetition (e.g., "aaaaaaa" or "hahahaha")
+        char_counts = {}
+        for char in message.lower():
+            if char.isalpha():
+                char_counts[char] = char_counts.get(char, 0) + 1
+        
+        total_chars = sum(char_counts.values())
+        if total_chars > 0:
+            max_char_ratio = max(char_counts.values()) / total_chars
+            if max_char_ratio > 0.6:  # More than 60% of a single character
+                return True
+        
+        return False
+
     
     async def analyze_prompt(
         self,
         user_message: str,
         has_images: bool = False,
-        timeout_seconds: int = 15
+        timeout_seconds: int = 15,
+        possible_language: str = "en"
     ) -> AnalysisResult:
         """
         Analyze user prompt and determine appropriate action
@@ -102,6 +190,7 @@ Enhanced prompt: """
             user_message: The user's message to analyze
             has_images: Whether the message includes images
             timeout_seconds: Maximum analysis time
+            possible_language: Detected or possible language of the message
             
         Returns:
             AnalysisResult with action and optional refinements
@@ -109,17 +198,15 @@ Enhanced prompt: """
         start_time = time.time()
         
         try:
-            # Skip analysis for very short or empty messages
-            if not user_message or len(user_message.strip()) < 3:
-                logger.info("🔍 Skipping analysis - message too short")
-                return AnalysisResult(
-                    action=AnalysisAction.PASS_THROUGH,
-                    reasoning="Message too short for analysis"
-                )
+            # Validate and filter messages based on length and content quality
+            validation_result = self._validate_message_quality(user_message)
+            if validation_result:
+                logger.info(f"🔍 Skipping analysis - {validation_result.reasoning}")
+                return validation_result
             
             # Run analysis with timeout
             analysis_task = asyncio.create_task(
-                self._perform_analysis(user_message, has_images)
+                self._perform_analysis(user_message, has_images, possible_language)
             )
             
             result = await asyncio.wait_for(analysis_task, timeout=timeout_seconds)
@@ -137,19 +224,23 @@ Enhanced prompt: """
                 reasoning="Analysis timed out for responsiveness"
             )
         except Exception as e:
-            logger.error(f"❌ Prompt analysis error: {e}")
+            import traceback
+            error_details = f"Type: {type(e).__name__}, Message: '{str(e)}', Args: {e.args}"
+            logger.error(f"❌ Prompt analysis error: {error_details}")
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
             return AnalysisResult(
                 action=AnalysisAction.PASS_THROUGH,
-                reasoning=f"Analysis error: {str(e)}"
+                reasoning=f"Analysis error: {error_details}"
             )
     
-    async def _perform_analysis(self, user_message: str, has_images: bool, ) -> AnalysisResult:
+    async def _perform_analysis(self, user_message: str, has_images: bool, possible_language: str = "en") -> AnalysisResult:
         """Perform actual prompt analysis using Gemini-Flash"""
         
-        # Create analysis prompt with language detection
+        # Create analysis prompt with all parameters including possible_language
         analysis_prompt = self.analysis_prompts["main_analysis"].format(
             user_message=user_message,
             has_images=str(has_images),
+            possible_language=possible_language
         )
         
         # Build Vertex AI request for gemini-2.5-flash (fast analysis)
@@ -163,7 +254,7 @@ Enhanced prompt: """
             "generationConfig": {
                 "temperature": 0.1,  # Low temperature for consistent analysis
                 "topP": 1,
-                "maxOutputTokens": 500,  # Limit output for speed
+                "maxOutputTokens": 2000,  # Ensure complete JSON response
                 "responseMimeType": "application/json"  # Request JSON response
             },
             "safetySettings": [
@@ -175,7 +266,7 @@ Enhanced prompt: """
         }
         
         # Call Vertex AI
-        endpoint = f"https://aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{settings.vertex_ai_location}/publishers/google/models/gemini-2.5-flash:generateContent"
+        endpoint = f"https://aiplatform.googleapis.com/v1/projects/{self.project_id}/locations/{settings.vertex_ai_location}/publishers/google/models/gemini-2.5-flash-lite:generateContent"
         access_token = self.auth_handler.get_access_token()
         
         headers = {
@@ -183,13 +274,15 @@ Enhanced prompt: """
             "Authorization": f"Bearer {access_token}"
         }
         
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=8.0) as client:
             response = await client.post(endpoint, headers=headers, json=vertex_request)
             
             if not response.is_success:
                 logger.error(f"❌ Gemini-Flash analysis failed: {response.status_code} - {response.text}")
                 raise Exception(f"Analysis API error: {response.status_code}")
             
+            # Debug: Log the raw response for JSON parsing issues
+            logger.info(f"🔍 Raw Vertex AI response: {response.text[:500]}...")
             return self._parse_analysis_response(response.text)
     
     def _parse_analysis_response(self, response: str) -> AnalysisResult:
