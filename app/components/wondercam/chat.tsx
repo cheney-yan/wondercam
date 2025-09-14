@@ -171,7 +171,7 @@ export function ChatComponent({
   const handleImageLoad = (key: string, e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     const { naturalWidth, naturalHeight } = img;
-    let orientation: 'portrait' | 'landscape' | 'square' =
+    const orientation: 'portrait' | 'landscape' | 'square' =
       naturalWidth === naturalHeight
         ? 'square'
         : (naturalWidth > naturalHeight ? 'landscape' : 'portrait');

@@ -320,7 +320,7 @@ export class AIServiceV2 {
   async *simpleChat(
     text: string,
     language: SupportedLanguage = 'en',
-    conversationHistory: V2Message[] = []
+    conversationHistory: any[] = [] // Accept any message format for flexibility
   ): AsyncGenerator<string> {
     
     const contents = this.createTextContent(text, language);
@@ -381,10 +381,10 @@ export class AIServiceV2 {
   }
 
   /**
-   * Continue conversation with V2 API - fixed signature to match unified service
+   * Continue conversation with V2 API - accepts ChatMessage[] for frontend compatibility
    */
   async *continueConversation(
-    messages: V2Message[],
+    messages: any[], // Accept ChatMessage[] from frontend
     newText: string,
     language: SupportedLanguage = 'en',
     photo?: CapturedPhoto

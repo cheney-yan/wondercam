@@ -12,7 +12,7 @@ import { creditService, CreditAction } from '@/lib/credit-service';
 import { UpgradePrompt, useUpgradePrompt } from '@/components/upgrade-prompt';
 import { getTranslations } from '@/lib/i18n';
 import { UserMenu } from '@/components/user-menu';
-import { unifiedAIService } from '@/lib/ai-service-unified';
+import { aiServiceV2 } from '@/lib/ai-service-v2';
 
 export type AppMode = 'camera' | 'chat' | 'photo-actions' | 'zoomed';
 export type SupportedLanguage = 'en' | 'zh' | 'es' | 'fr' | 'ja';
@@ -86,11 +86,11 @@ export default function WonderCamPage() {
     const initializeAPI = async () => {
       try {
         console.log('🔧 Initializing AI Service...');
-        const capabilities = await unifiedAIService.getCapabilities();
-        const health = await unifiedAIService.healthCheck();
+        const capabilities = await aiServiceV2.getCapabilities();
+        const health = await aiServiceV2.healthCheck();
         
         console.log('✅ AI Service initialized:', {
-          version: unifiedAIService.getCurrentAPIVersion(),
+          version: aiServiceV2.getCurrentAPIVersion(),
           capabilities: capabilities?.features || [],
           health
         });
@@ -326,7 +326,7 @@ export default function WonderCamPage() {
 
   const handleNewPhoto = () => {
     // Clear conversation history when starting new photo session
-    unifiedAIService.clearConversationHistory();
+    aiServiceV2.clearConversationHistory();
     
     setAppState(prev => ({
       ...prev,
@@ -455,7 +455,7 @@ export default function WonderCamPage() {
         usingCropped: effectivePhoto && effectivePhoto.id !== appState.currentPhoto?.id
       });
 
-      console.log(`✅ Using unified AI service (${unifiedAIService.getCurrentAPIVersion()})`);
+      console.log(`✅ Using V2 AI service (${aiServiceV2.getCurrentAPIVersion()})`);
       
       const streamingMessageId = crypto.randomUUID();
       let accumulatedContent = '';
@@ -482,25 +482,25 @@ export default function WonderCamPage() {
         if (isFirstMessage) {
           if (hasInitialPhoto && effectivePhoto) {
             console.log('🖼️ First message with (possibly cropped) photo -> analyzePhoto');
-            responseStream = unifiedAIService.analyzePhoto(
+            responseStream = aiServiceV2.analyzePhoto(
               effectivePhoto,
               message,
               appState.language
             );
           } else {
             console.log('🆕 First direct-chat message without photo -> generateImageFromPrompt');
-            responseStream = unifiedAIService.generateImageFromPrompt(
+            responseStream = aiServiceV2.generateImageFromPrompt(
               message,
               appState.language
             );
           }
         } else {
           console.log('💬 Continuing conversation');
-          responseStream = unifiedAIService.continueConversation(
+          responseStream = aiServiceV2.continueConversation(
             appState.activeSession.messages,
             message,
             appState.language,
-            effectivePhoto // can be null
+            effectivePhoto || undefined // convert null to undefined
           );
         }
         console.log('✅ Response stream created');
