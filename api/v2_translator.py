@@ -12,6 +12,7 @@ from config import settings
 import logging
 import base64
 import json
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,21 @@ class V2MessageTranslator:
             'fr': 'Répondez en français.',
             'ja': '日本語で答えてください。'
         }
+        
+        # Initialize prompt analyzer if enabled
+        self.prompt_analyzer = None
+        if settings.prompt_analysis_enabled:
+            try:
+                from prompt_analyzer import get_prompt_analyzer
+                self.prompt_analyzer = get_prompt_analyzer()
+                if self.prompt_analyzer:
+                    logger.info("✅ Prompt analyzer initialized in translator")
+                else:
+                    logger.warning("⚠️ Prompt analyzer failed to initialize")
+            except ImportError as e:
+                logger.warning(f"⚠️ Prompt analyzer not available: {e}")
+            except Exception as e:
+                logger.error(f"❌ Error initializing prompt analyzer: {e}")
     
     def validate_user_content(self, request: V2ChatRequest) -> Dict[str, Any]:
         """
@@ -75,10 +91,10 @@ class V2MessageTranslator:
 
     async def preprocess_request(self, request: V2ChatRequest) -> AsyncGenerator[V2ResponseChunk, None]:
         """
-        Preprocess request before sending to Vertex AI
-        Validates user content and yields system messages for client interaction
+        Enhanced preprocessing with intelligent prompt analysis
+        Validates user content and performs smart prompt analysis for better responses
         """
-        logger.info(f"Preprocessing V2 request with {len(request.contents)} user content parts")
+        logger.info(f"🧠 Starting intelligent preprocessing for {len(request.contents)} content parts")
         
         # Step 1: Validate all content parts
         validation = self.validate_user_content(request)
@@ -94,11 +110,68 @@ class V2MessageTranslator:
                 ).model_dump()
             )
         
-        # Step 2: Analyze content for preprocessing
-        text_parts = [part.text for part in request.contents if part.text]
-        image_parts = [part for part in request.contents if part.inlineData and 
+        # Step 2: Extract text content for analysis
+        text_parts = [part.text for part in request.contents if part.text and part.text.strip()]
+        image_parts = [part for part in request.contents if part.inlineData and
                       part.inlineData.get("mimeType", "").startswith("image/")]
         
+        # Step 3: Perform intelligent analysis if enabled and text content exists
+        if (hasattr(self, 'prompt_analyzer') and self.prompt_analyzer and
+            text_parts and
+            settings.prompt_analysis_enabled and
+            len(" ".join(text_parts).strip()) > 0):
+            
+            combined_text = " ".join(text_parts).strip()
+            has_images = len(image_parts) > 0
+            
+            logger.info(f"🔍 Analyzing message: '{combined_text[:100]}...' (has_images: {has_images})")
+            
+            start_time = time.time()
+            
+            try:
+                from prompt_analyzer import AnalysisAction
+                
+                # Run intelligent analysis
+                analysis_result = await self.prompt_analyzer.analyze_prompt(
+                    combined_text,
+                    has_images,
+                    timeout_seconds=settings.prompt_analysis_timeout
+                )
+                
+                analysis_time = int((time.time() - start_time) * 1000)
+                logger.info(f"✅ Analysis completed in {analysis_time}ms: {analysis_result.action} (confidence: {analysis_result.confidence})")
+                
+                # Handle analysis results
+                if analysis_result.action == AnalysisAction.DIRECT_REPLY:
+                    # Stop processing and reply directly
+                    logger.info("🛑 Analysis suggests direct reply - stopping preprocessing")
+                    request._stop_processing = True
+                    request._direct_reply = analysis_result.direct_reply
+                    return
+                    
+                elif analysis_result.action == AnalysisAction.REFINE:
+                    # Apply refined prompt
+                    logger.info("✨ Analysis suggests refinement - updating request")
+                    if analysis_result.refined_prompt:
+                        # Replace or enhance the first text part with refined prompt
+                        for i, part in enumerate(request.contents):
+                            if part.text and part.text.strip():
+                                original_text = part.text
+                                part.text = analysis_result.refined_prompt
+                                logger.info(f"🔄 Refined prompt: '{original_text[:50]}...' → '{part.text[:50]}...'")
+                                break
+                        request._analysis_applied = True
+                        request._original_prompt = combined_text
+                        request._refined_prompt = analysis_result.refined_prompt
+                
+                # Log analysis decision
+                request._analysis_result = analysis_result
+                
+            except Exception as e:
+                logger.error(f"❌ Intelligent analysis error: {e}")
+                # Continue with original logic on error
+        
+        # Step 4: Legacy preprocessing logic (image generation, analysis detection)
         if text_parts:
             combined_text = " ".join(text_parts).lower()
             
@@ -115,7 +188,7 @@ class V2MessageTranslator:
             
             if "analyze" in combined_text and image_parts:
                 yield V2ResponseChunk(
-                    type="system", 
+                    type="system",
                     content=V2SystemMessage(
                         type="preprocessing",
                         content="I'll analyze your image. This will consume 1 credit.",

@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, Dict
 import os
 
 
@@ -16,6 +16,30 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     debug: bool = False
+    
+    # Prompt Analysis Configuration
+    prompt_analysis_enabled: bool = False  # Disabled for immediate response
+    prompt_analysis_timeout: int = 20  # seconds
+    prompt_analysis_model: str = "gemini-2.5-flash"
+    
+    # Message formatting settings
+    add_message_separation: bool = True
+    immediate_response_text: str = "OK. "
+    use_simplified_format: bool = True
+    
+    # Status messages with better formatting
+    status_messages: Dict[str, str] = {
+        "refine": "I am generating an enhanced response based on your request...",
+        "direct_reply": "Let me help you with that directly...",
+        "pass_through": "Processing your request...",
+    }
+    
+    # Direct reply templates with proper formatting
+    direct_reply_templates: Dict[str, str] = {
+        "inappropriate": "I cannot assist with requests that might be harmful or inappropriate.\n\nPlease feel free to ask me something else I can help with.",
+        "unclear": "I'm having trouble understanding what you'd like me to help with.\n\nCould you please provide more specific details about your request?",
+        "general": "I'm not able to process that particular request.\n\nIs there something else I can help you with instead?"
+    }
     
     class Config:
         env_file = ".env"

@@ -206,8 +206,8 @@ export class AIServiceV2 {
       const hasImages = contents.some(c => c.inlineData?.mimeType?.startsWith('image/'));
       const hasAudio = contents.some(c => c.inlineData?.mimeType?.startsWith('audio/'));
 
-      console.log('🚀 V2 API Request:', {
-        endpoint: '/v2/chat',
+      console.log('🚀 V2 Enhanced API Request:', {
+        endpoint: '/v2/echat',
         contentParts: contents.length,
         language,
         sessionId,
@@ -215,11 +215,13 @@ export class AIServiceV2 {
         hasAudio
       });
 
-      const response = await fetch('/v2/chat', {
+      const response = await fetch('/v2/echat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
+          'Authorization': `Bearer ${authToken}`,
+          'Cache-Control': 'no-cache',
+          'Accept': 'text/event-stream'
         },
         body: JSON.stringify(requestBody)
       });
@@ -248,7 +250,11 @@ export class AIServiceV2 {
           const { done, value } = await reader.read();
           if (done) break;
 
-          buffer += decoder.decode(value, { stream: true });
+          // Process chunks immediately as they arrive
+          const chunk = decoder.decode(value, { stream: true });
+          console.log('📨 V2 API: Received raw chunk:', chunk.length, 'bytes at', Date.now());
+          
+          buffer += chunk;
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
 
@@ -256,14 +262,25 @@ export class AIServiceV2 {
             if (line.startsWith('data:')) {
               try {
                 const jsonStr = line.substring(5).trim();
+                console.log('📡 V2 API: Processing SSE line at', Date.now(), ':', jsonStr.substring(0, 100) + (jsonStr.length > 100 ? '...' : ''));
+                
                 if (jsonStr && jsonStr !== '[DONE]') {
                   const data = JSON.parse(jsonStr);
+                  console.log('📦 V2 API: Parsed data structure:', {
+                    type: typeof data,
+                    isNull: data === null,
+                    keys: data && typeof data === 'object' ? Object.keys(data) : [],
+                    hasCandidates: data && 'candidates' in data,
+                    hasType: data && 'type' in data,
+                    hasData: data && 'data' in data
+                  });
                   
                   // Handle different response formats
                   if (typeof data === 'object' && data !== null) {
                     // Handle V2ResponseChunk format (preprocessing messages)
                     if ('type' in data && 'content' in data && 'is_final' in data) {
                       // This is a V2ResponseChunk (preprocessing/system message)
+                      console.log('🔧 V2ResponseChunk detected:', { type: data.type, content: data.content?.substring(0, 50) });
                       if (data.type === 'system') {
                         console.log('🔧 System message:', data.content);
                         yield data;
@@ -277,6 +294,7 @@ export class AIServiceV2 {
                     // Handle status message format
                     else if ('type' in data && 'data' in data) {
                       // This is a simple status message like {"type": "text", "data": "Received, processing..."}
+                      console.log('📋 Status message detected:', { type: data.type, data: data.data?.substring(0, 50) });
                       yield { type: data.type, data: data.data };
                     }
                     // Handle raw Vertex AI format (direct streaming)
@@ -285,8 +303,10 @@ export class AIServiceV2 {
                         if (candidate.content?.parts) {
                           for (const part of candidate.content.parts) {
                             if (part.text) {
+                              console.log('📨 V2 API: Received text chunk:', part.text);
                               yield part.text;
                             } else if (part.inlineData?.data) {
+                              console.log('🖼️ V2 API: Received image chunk');
                               yield { type: 'image', data: part.inlineData.data };
                             }
                           }
@@ -439,7 +459,7 @@ export class AIServiceV2 {
    */
   async getCapabilities(): Promise<any> {
     try {
-      const response = await fetch('/v2/capabilities');
+      const response = await fetch('/v2/ecapabilities');
       if (!response.ok) {
         throw new Error(`Failed to get capabilities: ${response.status}`);
       }
@@ -462,7 +482,7 @@ export class AIServiceV2 {
    */
   async healthCheck(): Promise<{ status: string; version: string; timestamp: string }> {
     try {
-      const response = await fetch('/v2/health');
+      const response = await fetch('/v2/ehealth');
       if (!response.ok) {
         return {
           status: 'error',

@@ -14,6 +14,7 @@ from endpoint_translator import EndpointTranslator
 
 # Import V2 API
 from v2_api import v2_router
+from v2_api_enhanced import v2_enhanced_router
 
 # Configure logging
 logging.basicConfig(
@@ -40,6 +41,7 @@ app.add_middleware(
 
 # Include V2 API routes
 app.include_router(v2_router)
+app.include_router(v2_enhanced_router)  # Remove /enhanced prefix, routes now at /v2/echat, etc.
 
 
 # Initialize global components
@@ -75,14 +77,17 @@ async def root():
     """Root endpoint with service information"""
     return {
         "service": "WonderCam AI API Service",
-        "version": "2.0.0", 
-        "description": "Unified AI API supporting v1beta (Gemini-compatible) and v2 (extensible messaging)",
+        "version": "2.1.0",
+        "description": "Unified AI API supporting v1beta (Gemini-compatible), v2 (extensible messaging), and enhanced v2 (intelligent analysis)",
         "endpoints": {
             "health": "/health",
             "v1beta_gemini": "/v1beta/models/{model}:{action}",
             "v2_chat": "/v2/chat",
-            "v2_health": "/v2/health", 
-            "v2_capabilities": "/v2/capabilities"
+            "v2_health": "/v2/health",
+            "v2_capabilities": "/v2/capabilities",
+            "v2_enhanced_chat": "/v2/echat",
+            "v2_enhanced_health": "/v2/ehealth",
+            "v2_enhanced_capabilities": "/v2/ecapabilities"
         },
         "versions": {
             "v1beta": {
@@ -95,6 +100,17 @@ async def root():
                 "authentication": "Authorization: Bearer {token}",
                 "message_types": ["text", "image", "voice"],
                 "features": ["streaming", "preprocessing", "multi_modal", "extensible"]
+            },
+            "v2-enhanced": {
+                "description": "Intelligent V2 API with prompt analysis and optimization",
+                "authentication": "Authorization: Bearer {token}",
+                "message_types": ["text", "image", "voice"],
+                "features": [
+                    "streaming", "intelligent_analysis", "immediate_response",
+                    "background_processing", "prompt_refinement", "direct_replies",
+                    "optimized_format", "enhanced_messaging", "multi_modal"
+                ],
+                "analysis_actions": ["refine", "direct_reply", "pass_through"]
             }
         }
     }
