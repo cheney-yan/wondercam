@@ -216,7 +216,8 @@ export class AIServiceV2 {
       });
 
       // Use direct API server connection to avoid Next.js proxy buffering
-      const response = await fetch('http://localhost:18000/v2/echat', {
+      const backendHost = process.env.NEXT_PUBLIC_BACKEND_API_HOST || 'http://localhost:18000';
+      const response = await fetch(`${backendHost}/v2/echat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -491,7 +492,8 @@ export class AIServiceV2 {
    */
   async getCapabilities(): Promise<any> {
     try {
-      const response = await fetch('http://localhost:18000/v2/ecapabilities');
+      const backendHost = process.env.NEXT_PUBLIC_BACKEND_API_HOST || 'http://localhost:18000';
+      const response = await fetch(`${backendHost}/v2/ecapabilities`);
       if (!response.ok) {
         throw new Error(`Failed to get capabilities: ${response.status}`);
       }
@@ -514,7 +516,8 @@ export class AIServiceV2 {
    */
   async healthCheck(): Promise<{ status: string; version: string; timestamp: string }> {
     try {
-      const response = await fetch('http://localhost:18000/v2/ehealth');
+      const backendHost = process.env.NEXT_PUBLIC_BACKEND_API_HOST || 'http://localhost:18000';
+      const response = await fetch(`${backendHost}/v2/ehealth`);
       if (!response.ok) {
         return {
           status: 'error',

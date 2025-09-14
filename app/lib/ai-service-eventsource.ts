@@ -119,7 +119,8 @@ export class AIServiceEventSource {
       // Create a special EventSource endpoint that accepts POST data via query parameters
       // We'll need to create this endpoint on the server
       const encodedRequest = encodeURIComponent(JSON.stringify(requestBody));
-      const url = `http://localhost:18000/v2/echat?data=${encodedRequest}&auth=${encodeURIComponent(authToken)}`;
+      const backendHost = process.env.NEXT_PUBLIC_BACKEND_API_HOST || 'http://localhost:18000';
+      const url = `${backendHost}/v2/echat?data=${encodedRequest}&auth=${encodeURIComponent(authToken)}`;
 
       console.log('🔗 EventSource URL:', url.substring(0, 100) + '...');
 

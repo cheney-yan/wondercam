@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     debug: bool = False
     
     # Prompt Analysis Configuration
-    prompt_analysis_enabled: bool = True  # Enable intelligent analysis
+    prompt_analysis_enabled: bool = False  # Disable intelligent analysis
     prompt_analysis_timeout: int = 20  # seconds - full analysis timeout
     prompt_analysis_quick_timeout: float = 8.0  # seconds - allow more time since we notify user
     prompt_analysis_model: str = "gemini-2.5-flash-lite"

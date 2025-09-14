@@ -66,6 +66,7 @@ class PromptAnalyzer:
 - Use detected language: {possible_language}
 - For images: focus on visual analysis
 - For text: focus on clarity and specificity
+- Consistency: If image is provided, the refined prompt must closely be based on the image.
 
 **JSON Response** (MUST be complete and valid):
 {{
